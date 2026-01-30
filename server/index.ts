@@ -60,6 +60,33 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Start Python processes in development
+  if (process.env.NODE_ENV !== "production") {
+    const { spawn } = await import("child_process");
+    const startProcess = (command: string, args: string[], name: string) => {
+      console.log(`Starting ${name}...`);
+      const proc = spawn(command, args);
+      proc.stdout.on('data', (data) => console.log(`[${name}] ${data.toString().trim()}`));
+      proc.stderr.on('data', (data) => console.error(`[${name}] ${data.toString().trim()}`));
+      proc.on('close', (code) => console.log(`[${name}] exited with code ${code}`));
+      return proc;
+    };
+
+    // Kill python processes on exit
+    const pythonProcs: any[] = [];
+    pythonProcs.push(startProcess('python3', ['server.py'], 'TCP Server'));
+    
+    // Give TCP server a moment to start
+    setTimeout(() => {
+      pythonProcs.push(startProcess('python3', ['ai_client.py', '--side', 'black'], 'AI Client'));
+      pythonProcs.push(startProcess('python3', ['ws_bridge.py'], 'WS Bridge'));
+    }, 1000);
+
+    process.on('exit', () => {
+      pythonProcs.forEach(p => p.kill());
+    });
+  }
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
